@@ -3,13 +3,20 @@ lib = File.expand_path('lib', __dir__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 require_relative "./lib/stations_human_diff"
 
-SHD::Logger.info "Veryfing pull requests..."
-
 SHD::EnvironmentChecker.check!
 
 client = SHD::GithubClient.generate
 repository = ENV.fetch("GITHUB_REPOSITORY")
 pull_requests = client.pull_requests(repository, state: 'open')
+
+if !pull_requests.empty?
+  last_update = pull_requests.max_by { |pull_request| pull_request["updated_at"] }
+
+  if Time.now - last_update > 30 * 60 # 30 minutes
+    SHD::Logger.info "Last update on #{last_update}. Skipping..."
+    exit(0)
+  end
+end
 
 pull_requests.each do |pull_request|
   SHD::Logger.info "Veryfing pull request ##{pull_request['number']}..."
@@ -34,7 +41,7 @@ pull_requests.each do |pull_request|
     ).run
 
     formatted_report = SHD::ReportFormatter.run(report)
-    formatted_report = formatted_report.empty? ? 'No changes' : formatted_report
+    formatted_report = formatted_report.empty? ? 'No station changes' : formatted_report
 
     SHD::GithubClient.post_comment!(
       client: client,
